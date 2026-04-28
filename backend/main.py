@@ -1,15 +1,19 @@
-import json
+import json, os
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
-import db
-from manager import Manager
+from backend import db
+from backend.manager import Manager
 
 app = FastAPI()
 mgr = Manager()
 
-app.mount("/", StaticFiles(directory="../frontend", html=True), name="frontend")
+# ✅ FRONTEND PATH FIX (Render safe)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")
+
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
 
 async def send_users():
@@ -31,13 +35,14 @@ async def ws(websocket: WebSocket):
             t = data["type"]
 
             if t == "register":
-                ok = db.register(data["name"],data["password"])
+                ok = db.register(data["name"], data["password"])
                 await websocket.send_text(json.dumps({"type":"register","ok":ok}))
 
             elif t == "login":
-                ok = db.login(data["name"],data["password"])
+                ok = db.login(data["name"], data["password"])
+
                 if ok:
-                    await mgr.connect(data["name"],websocket)
+                    await mgr.connect(data["name"], websocket)
                     await send_users()
 
                 await websocket.send_text(json.dumps({"type":"login","ok":ok}))
@@ -45,9 +50,9 @@ async def ws(websocket: WebSocket):
             elif t == "dm":
                 sender = mgr.get_name(websocket)
                 target = mgr.get_ws(data["to"])
-                time = datetime.now().strftime("%H:%M")
 
-                db.save(sender,data["to"],data["msg"],time)
+                time = datetime.now().strftime("%H:%M")
+                db.save(sender, data["to"], data["msg"], time)
 
                 if target:
                     await target.send_text(json.dumps({
