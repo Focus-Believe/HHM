@@ -1,103 +1,148 @@
 let ws;
-let target=null;
-let myName=null;
+let target = null;
+let myName = null;
 
+// =====================
+// CONNECT WEBSOCKET
+// =====================
 function connect(){
-  ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
+  ws = new WebSocket(
+    (location.protocol === "https:" ? "wss://" : "ws://") +
+    location.host +
+    "/ws"
+  );
 
-  ws.onmessage=e=>{
-    let d=JSON.parse(e.data);
+  ws.onmessage = (e) => {
+    let d = JSON.parse(e.data);
 
-    if(d.type==="login" && d.ok){
-      myName=name.value;
-      login.style.display="none";
-      app.style.display="flex";
+    // LOGIN SUCCESS
+    if(d.type === "login" && d.ok){
+      myName = document.getElementById("name").value;
+
+      document.getElementById("login").style.display = "none";
+      document.getElementById("app").style.display = "flex";
     }
 
-    if(d.type==="users"){
+    // USERS LIST
+    if(d.type === "users"){
       renderUsers(d.data);
     }
 
-    if(d.type==="msg"){
+    // MESSAGE RECEIVE
+    if(d.type === "msg"){
       addMsg(d.from, d.msg, d.time);
     }
   };
 }
 
+// =====================
+// LOGIN
+// =====================
 function login(){
   connect();
-  ws.onopen=()=>{
+
+  ws.onopen = () => {
     ws.send(JSON.stringify({
-      type:"login",
-      name:name.value,
-      password:pass.value
+      type: "login",
+      name: document.getElementById("name").value,
+      password: document.getElementById("pass").value
     }));
   };
 }
 
+// =====================
+// REGISTER
+// =====================
 function register(){
   connect();
-  ws.onopen=()=>{
+
+  ws.onopen = () => {
     ws.send(JSON.stringify({
-      type:"register",
-      name:name.value,
-      password:pass.value
+      type: "register",
+      name: document.getElementById("name").value,
+      password: document.getElementById("pass").value
     }));
   };
 }
 
+// =====================
+// RENDER USERS
+// =====================
 function renderUsers(list){
-  users.innerHTML="";
-  list.forEach(u=>{
-    let div=document.createElement("div");
-    div.className="user";
-    div.innerText=u;
+  const usersDiv = document.getElementById("users");
+  const header = document.getElementById("header");
 
-    div.onclick=()=>{
-      target=u;
-      header.innerText=u;
+  usersDiv.innerHTML = "";
 
-      document.querySelectorAll(".user").forEach(x=>x.classList.remove("active"));
+  list.forEach(u => {
+    let div = document.createElement("div");
+    div.className = "user";
+    div.innerText = u;
+
+    div.onclick = () => {
+      target = u;
+      header.innerText = "Chat with " + u;
+
+      document.querySelectorAll(".user")
+        .forEach(x => x.classList.remove("active"));
+
       div.classList.add("active");
     };
 
-    users.appendChild(div);
+    usersDiv.appendChild(div);
   });
 }
 
+// =====================
+// SEND MESSAGE
+// =====================
 function send(){
-  if(!target) return alert("Select user first");
+  if(!target){
+    alert("Select a user first");
+    return;
+  }
 
-  let text=msg.value;
-  let time=getTime();
+  const msgInput = document.getElementById("msg");
+  const text = msgInput.value.trim();
 
-  addMsg(myName,text,time);
+  if(text === "") return;
+
+  const time = getTime();
+
+  addMsg(myName, text, time);
 
   ws.send(JSON.stringify({
-    type:"dm",
-    to:target,
-    msg:text
+    type: "dm",
+    to: target,
+    msg: text
   }));
 
-  msg.value="";
+  msgInput.value = "";
 }
 
-function addMsg(sender,text,time){
-  let box=messages;
+// =====================
+// ADD MESSAGE UI
+// =====================
+function addMsg(sender, text, time){
+  const box = document.getElementById("messages");
 
-  let div=document.createElement("div");
-  div.className="msg "+(sender===myName?"me":"other");
+  let div = document.createElement("div");
 
-  div.innerHTML=`
+  div.className = "msg " + (sender === myName ? "me" : "other");
+
+  div.innerHTML = `
     <div>${text}</div>
     <div class="time">${time}</div>
   `;
 
   box.appendChild(div);
-  box.scrollTop=box.scrollHeight;
+  box.scrollTop = box.scrollHeight;
 }
 
+// =====================
+// TIME FORMAT
+// =====================
 function getTime(){
-  let d=new Date();
-  return d.getHours()+":"+String(d.getMinutes()).padStart(2,"0");
-             }
+  let d = new Date();
+  return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
