@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div id="login" class="login">
+  <h2>Chat App</h2>
+  <input id="name" placeholder="Username">
+  <input id="pass" type="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+  <button onclick="register()">Register</button>
+</div>
+
+<div id="app" class="app">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">Users</div>
+    <div id="users" class="users"></div>
+  </div>
+
+  <!-- Chat -->
+  <div class="chat">
+
+    <div id="header" class="chat-header">Select user</div>
+
+    <div id="messages" class="messages"></div>
+
+    <div class="input-box">
+      <input id="msg" placeholder="Type message...">
+      <button onclick="send()">➤</button>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+      </html>
