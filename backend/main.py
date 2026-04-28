@@ -19,7 +19,7 @@ FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")
 
 
 # =========================
-# STATIC FILES (IMPORTANT FIX)
+# STATIC FILES
 # =========================
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
@@ -33,10 +33,11 @@ async def home():
 
 
 # =========================
-# SEND USERS LIST
+# USERS BROADCAST
 # =========================
 async def send_users():
     users = mgr.users()
+
     for ws in list(mgr.name_to_ws.values()):
         try:
             await ws.send_text(json.dumps({
@@ -59,15 +60,20 @@ async def ws(websocket: WebSocket):
             data = json.loads(await websocket.receive_text())
             t = data.get("type")
 
+            # -----------------
             # REGISTER
+            # -----------------
             if t == "register":
                 ok = db.register(data["name"], data["password"])
+
                 await websocket.send_text(json.dumps({
                     "type": "register",
                     "ok": ok
                 }))
 
+            # -----------------
             # LOGIN
+            # -----------------
             elif t == "login":
                 ok = db.login(data["name"], data["password"])
 
@@ -80,7 +86,9 @@ async def ws(websocket: WebSocket):
                     "ok": ok
                 }))
 
+            # -----------------
             # DIRECT MESSAGE
+            # -----------------
             elif t == "dm":
                 sender = mgr.get_name(websocket)
                 target_ws = mgr.get_ws(data["to"])
@@ -91,9 +99,9 @@ async def ws(websocket: WebSocket):
 
                 if target_ws:
                     await target_ws.send_text(json.dumps({
-                        "type": "msg",
-                        "from": sender,
-                        "msg": data["msg"],
+                        "type": "message",   # ✅ FIXED (was msg)
+                        "sender": sender,    # ✅ FIXED (was from)
+                        "text": data["msg"],
                         "time": time
                     }))
 
