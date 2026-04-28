@@ -3,42 +3,49 @@
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<!-- ✅ STATIC PATH FIX (Render requirement) -->
+<title>Chat App</title>
+
+<!-- ✅ STATIC PATH FIX -->
 <link rel="stylesheet" href="/static/style.css">
 
 </head>
 
 <body>
 
-<!-- LOGIN -->
+<!-- ================= LOGIN ================= -->
 <div id="login" class="login">
   <h2>Chat App</h2>
 
-  <input id="name" placeholder="Username">
+  <input id="name" placeholder="Username" autocomplete="off">
   <input id="pass" type="password" placeholder="Password">
 
   <button onclick="login()">Login</button>
   <button onclick="register()">Register</button>
 </div>
 
-<!-- APP -->
+<!-- ================= APP ================= -->
 <div id="app" class="app">
 
-  <!-- Sidebar -->
+  <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="sidebar-header">Users</div>
     <div id="users" class="users"></div>
   </div>
 
-  <!-- Chat -->
+  <!-- CHAT -->
   <div class="chat">
 
-    <div id="header" class="chat-header">Select user</div>
+    <div id="header" class="chat-header">
+      Select user
+    </div>
 
     <div id="messages" class="messages"></div>
 
+    <!-- INPUT -->
     <div class="input-box">
-      <input id="msg" placeholder="Type message...">
+      <input id="msg" placeholder="Type message..." autocomplete="off">
+
+      <!-- ENTER SEND SUPPORT -->
       <button onclick="send()">➤</button>
     </div>
 
@@ -46,8 +53,21 @@
 
 </div>
 
-<!-- ✅ STATIC PATH FIX -->
+<!-- ================= SCRIPT ================= -->
 <script src="/static/app.js"></script>
+
+<!-- ================= UX FIX SCRIPT ================= -->
+<script>
+  // ENTER key to send message
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Enter"){
+      const msg = document.getElementById("msg");
+      if(msg && document.getElementById("app").style.display !== "none"){
+        send();
+      }
+    }
+  });
+</script>
 
 </body>
   </html>
