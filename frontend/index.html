@@ -2,19 +2,26 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="style.css">
+
+<!-- ✅ STATIC PATH FIX (Render requirement) -->
+<link rel="stylesheet" href="/static/style.css">
+
 </head>
 
 <body>
 
+<!-- LOGIN -->
 <div id="login" class="login">
   <h2>Chat App</h2>
+
   <input id="name" placeholder="Username">
   <input id="pass" type="password" placeholder="Password">
+
   <button onclick="login()">Login</button>
   <button onclick="register()">Register</button>
 </div>
 
+<!-- APP -->
 <div id="app" class="app">
 
   <!-- Sidebar -->
@@ -39,6 +46,8 @@
 
 </div>
 
-<script src="app.js"></script>
+<!-- ✅ STATIC PATH FIX -->
+<script src="/static/app.js"></script>
+
 </body>
-      </html>
+  </html>
