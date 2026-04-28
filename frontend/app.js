@@ -28,9 +28,9 @@ function connect(){
       renderUsers(d.data);
     }
 
-    // MESSAGE RECEIVE
-    if(d.type === "msg"){
-      addMsg(d.from, d.msg, d.time);
+    // MESSAGE RECEIVE (FIXED HERE)
+    if(d.type === "message"){
+      addMsg(d.sender, d.text, d.time);
     }
   };
 }
@@ -109,6 +109,7 @@ function send(){
 
   const time = getTime();
 
+  // show own message instantly
   addMsg(myName, text, time);
 
   ws.send(JSON.stringify({
@@ -131,8 +132,8 @@ function addMsg(sender, text, time){
   div.className = "msg " + (sender === myName ? "me" : "other");
 
   div.innerHTML = `
-    <div>${text}</div>
-    <div class="time">${time}</div>
+    <div class="text">${text}</div>
+    <div class="time">${sender} • ${time}</div>
   `;
 
   box.appendChild(div);
