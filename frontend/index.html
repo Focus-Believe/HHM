@@ -5,7 +5,6 @@
 
 <title>Chat App</title>
 
-<!-- ✅ STATIC PATH FIX -->
 <link rel="stylesheet" href="/static/style.css">
 
 </head>
@@ -23,30 +22,47 @@
   <button onclick="register()">Register</button>
 </div>
 
-<!-- ================= APP ================= -->
-<div id="app" class="app">
+<!-- ================= MAIN APP ================= -->
+<div id="app" class="app" style="display:none;">
 
-  <!-- SIDEBAR -->
+  <!-- ================= SIDEBAR ================= -->
   <div class="sidebar">
-    <div class="sidebar-header">Users</div>
-    <div id="users" class="users"></div>
-  </div>
 
-  <!-- CHAT -->
-  <div class="chat">
-
-    <div id="header" class="chat-header">
-      Select user
+    <div class="sidebar-header">
+      <div>Users</div>
     </div>
 
+    <!-- FUTURE: search users -->
+    <input id="search" placeholder="Search users..." class="search-box">
+
+    <div id="users" class="users"></div>
+
+  </div>
+
+  <!-- ================= CHAT AREA ================= -->
+  <div class="chat">
+
+    <!-- HEADER -->
+    <div id="header" class="chat-header">
+      Select a user to start chat
+    </div>
+
+    <!-- FUTURE: typing indicator -->
+    <div id="typing" class="typing"></div>
+
+    <!-- MESSAGES -->
     <div id="messages" class="messages"></div>
 
-    <!-- INPUT -->
+    <!-- INPUT BOX -->
     <div class="input-box">
-      <input id="msg" placeholder="Type message..." autocomplete="off">
 
-      <!-- ENTER SEND SUPPORT -->
+      <input id="msg"
+        placeholder="Type message..."
+        autocomplete="off"
+        oninput="typing()">
+
       <button onclick="send()">➤</button>
+
     </div>
 
   </div>
@@ -56,17 +72,24 @@
 <!-- ================= SCRIPT ================= -->
 <script src="/static/app.js"></script>
 
-<!-- ================= UX FIX SCRIPT ================= -->
+<!-- ================= UX FEATURES ================= -->
 <script>
-  // ENTER key to send message
+
+  // ENTER TO SEND MESSAGE
   document.addEventListener("keydown", function(e){
     if(e.key === "Enter"){
-      const msg = document.getElementById("msg");
-      if(msg && document.getElementById("app").style.display !== "none"){
+      let msg = document.getElementById("msg");
+      if(msg && msg.value.trim() !== ""){
         send();
       }
     }
   });
+
+  // FUTURE: typing indicator hook
+  function typing(){
+    // ws.send({type:"typing", to:target})
+  }
+
 </script>
 
 </body>
