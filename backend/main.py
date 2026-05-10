@@ -1,4 +1,7 @@
-import json, os
+import json
+import os
+import asyncio
+
 from datetime import datetime
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -10,6 +13,38 @@ from backend.manager import Manager
 
 app = FastAPI()
 mgr = Manager()
+
+# =========================
+# SAVE QUEUE
+# =========================
+save_queue = asyncio.Queue()
+
+
+# =========================
+# DB SAVE WORKER
+# =========================
+async def save_worker():
+
+    while True:
+
+        # queue থেকে next message নাও
+        sender, receiver, msg, time = await save_queue.get()
+
+        # database save
+        db.save(sender, receiver, msg, time)
+
+        print(f"Saved: {msg}")
+
+
+# =========================
+# START WORKER
+# =========================
+@app.on_event("startup")
+async def startup():
+
+    # background worker start
+    asyncio.create_task(save_worker())
+
 
 # =========================
 # PATH SETUP (Render safe)
@@ -36,14 +71,17 @@ async def home():
 # USERS BROADCAST
 # =========================
 async def send_users():
+
     users = mgr.users()
 
     for ws in list(mgr.name_to_ws.values()):
+
         try:
             await ws.send_text(json.dumps({
                 "type": "users",
                 "data": users
             }))
+
         except:
             mgr.disconnect(ws)
 
@@ -53,18 +91,26 @@ async def send_users():
 # =========================
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
+
     await websocket.accept()
 
     try:
+
         while True:
+
             data = json.loads(await websocket.receive_text())
+
             t = data.get("type")
 
             # -----------------
             # REGISTER
             # -----------------
             if t == "register":
-                ok = db.register(data["name"], data["password"])
+
+                ok = db.register(
+                    data["name"],
+                    data["password"]
+                )
 
                 await websocket.send_text(json.dumps({
                     "type": "register",
@@ -75,10 +121,18 @@ async def ws(websocket: WebSocket):
             # LOGIN
             # -----------------
             elif t == "login":
-                ok = db.login(data["name"], data["password"])
+
+                ok = db.login(
+                    data["name"],
+                    data["password"]
+                )
 
                 if ok:
-                    await mgr.connect(data["name"], websocket)
+                    await mgr.connect(
+                        data["name"],
+                        websocket
+                    )
+
                     await send_users()
 
                 await websocket.send_text(json.dumps({
@@ -90,21 +144,37 @@ async def ws(websocket: WebSocket):
             # DIRECT MESSAGE
             # -----------------
             elif t == "dm":
+
                 sender = mgr.get_name(websocket)
+
                 target_ws = mgr.get_ws(data["to"])
 
                 time = datetime.now().strftime("%H:%M")
 
-                db.save(sender, data["to"], data["msg"], time)
+                # =====================
+                # SAVE TO QUEUE
+                # =====================
+                await save_queue.put((
+                    sender,
+                    data["to"],
+                    data["msg"],
+                    time
+                ))
 
+                # =====================
+                # SEND MESSAGE
+                # =====================
                 if target_ws:
+
                     await target_ws.send_text(json.dumps({
-                        "type": "message",   # ✅ FIXED (was msg)
-                        "sender": sender,    # ✅ FIXED (was from)
+                        "type": "message",
+                        "sender": sender,
                         "text": data["msg"],
                         "time": time
                     }))
 
     except WebSocketDisconnect:
+
         mgr.disconnect(websocket)
+
         await send_users()
