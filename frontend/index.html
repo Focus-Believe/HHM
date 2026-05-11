@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>Chat App</title>
@@ -13,6 +14,7 @@
 
 <!-- ================= LOGIN ================= -->
 <div id="login" class="login">
+
   <h2>Chat App</h2>
 
   <input id="name" placeholder="Username" autocomplete="off">
@@ -20,20 +22,26 @@
 
   <button onclick="login()">Login</button>
   <button onclick="register()">Register</button>
+
 </div>
 
-<!-- ================= MAIN APP ================= -->
+<!-- ================= APP ================= -->
 <div id="app" class="app" style="display:none;">
 
   <!-- ================= SIDEBAR ================= -->
   <div class="sidebar">
 
     <div class="sidebar-header">
-      <div>Users</div>
+      <div>💬 Chats</div>
     </div>
 
-    <!-- FUTURE: search users -->
-    <input id="search" placeholder="Search users..." class="search-box">
+    <!-- SEARCH USERS -->
+    <input
+      id="search"
+      placeholder="Search users..."
+      class="search-box"
+      oninput="searchUsers()"
+    >
 
     <div id="users" class="users"></div>
 
@@ -47,19 +55,21 @@
       Select a user to start chat
     </div>
 
-    <!-- FUTURE: typing indicator -->
+    <!-- TYPING INDICATOR -->
     <div id="typing" class="typing"></div>
 
     <!-- MESSAGES -->
     <div id="messages" class="messages"></div>
 
-    <!-- INPUT BOX -->
+    <!-- INPUT -->
     <div class="input-box">
 
-      <input id="msg"
+      <input
+        id="msg"
         placeholder="Type message..."
         autocomplete="off"
-        oninput="typing()">
+        oninput="typing()"
+      >
 
       <button onclick="send()">➤</button>
 
@@ -72,25 +82,64 @@
 <!-- ================= SCRIPT ================= -->
 <script src="/static/app.js"></script>
 
-<!-- ================= UX FEATURES ================= -->
+<!-- ================= FUTURE UX FEATURES ================= -->
 <script>
 
-  // ENTER TO SEND MESSAGE
+  // ENTER TO SEND
   document.addEventListener("keydown", function(e){
+
     if(e.key === "Enter"){
+
       let msg = document.getElementById("msg");
+
       if(msg && msg.value.trim() !== ""){
         send();
       }
     }
   });
 
-  // FUTURE: typing indicator hook
+  // =====================
+  // SEARCH USERS (FUTURE READY)
+  // =====================
+  function searchUsers(){
+
+    let input = document.getElementById("search").value.toLowerCase();
+    let users = document.querySelectorAll(".user");
+
+    users.forEach(u => {
+
+      let name = u.innerText.toLowerCase();
+
+      if(name.includes(input)){
+        u.style.display = "block";
+      } else {
+        u.style.display = "none";
+      }
+    });
+  }
+
+  // =====================
+  // TYPING INDICATOR HOOK
+  // =====================
   function typing(){
-    // ws.send({type:"typing", to:target})
+
+    // future websocket feature
+    // ws.send(JSON.stringify({
+    //   type:"typing",
+    //   to: target
+    // }));
+
+    let box = document.getElementById("typing");
+    box.innerText = "typing...";
+    
+    clearTimeout(window.typingTimeout);
+
+    window.typingTimeout = setTimeout(() => {
+      box.innerText = "";
+    }, 1000);
   }
 
 </script>
 
 </body>
-  </html>
+        </html>
