@@ -2,13 +2,14 @@ let ws;
 let target = null;
 let myName = null;
 
-// 👉 per-user chat store
+// chat memory
 let chats = {};
 
 // =====================
 // CONNECT WEBSOCKET
 // =====================
-function connect(){
+function connect() {
+
   ws = new WebSocket(
     (location.protocol === "https:" ? "wss://" : "ws://") +
     location.host +
@@ -16,24 +17,32 @@ function connect(){
   );
 
   ws.onmessage = (e) => {
+
     let d = JSON.parse(e.data);
 
+    // =====================
     // LOGIN SUCCESS
-    if(d.type === "login" && d.ok){
+    // =====================
+    if (d.type === "login" && d.ok) {
+
       myName = document.getElementById("name").value;
 
       document.getElementById("login").style.display = "none";
       document.getElementById("app").style.display = "flex";
     }
 
+    // =====================
     // USERS LIST
-    if(d.type === "users"){
+    // =====================
+    if (d.type === "users") {
       renderUsers(d.data);
     }
 
+    // =====================
     // MESSAGE RECEIVE
-    if(d.type === "message"){
-      addMsg(d.sender, d.text, d.time);
+    // =====================
+    if (d.type === "message") {
+      handleIncomingMessage(d);
     }
   };
 }
@@ -41,10 +50,12 @@ function connect(){
 // =====================
 // LOGIN
 // =====================
-function login(){
+function login() {
+
   connect();
 
   ws.onopen = () => {
+
     ws.send(JSON.stringify({
       type: "login",
       name: document.getElementById("name").value,
@@ -56,10 +67,12 @@ function login(){
 // =====================
 // REGISTER
 // =====================
-function register(){
+function register() {
+
   connect();
 
   ws.onopen = () => {
+
     ws.send(JSON.stringify({
       type: "register",
       name: document.getElementById("name").value,
@@ -71,7 +84,8 @@ function register(){
 // =====================
 // RENDER USERS
 // =====================
-function renderUsers(list){
+function renderUsers(list) {
+
   const usersDiv = document.getElementById("users");
   const header = document.getElementById("header");
 
@@ -79,14 +93,14 @@ function renderUsers(list){
 
   list.forEach(u => {
 
-    // ❌ নিজের নাম hide
-    if(u === myName) return;
+    if (u === myName) return;
 
     let div = document.createElement("div");
     div.className = "user";
     div.innerText = u;
 
-    div.onclick = () => {
+    div.onclick = async () => {
+
       target = u;
       header.innerText = "Chat with " + u;
 
@@ -95,8 +109,7 @@ function renderUsers(list){
 
       div.classList.add("active");
 
-      // 👉 load chat history
-      renderChat(u);
+      await loadHistory(u);
     };
 
     usersDiv.appendChild(div);
@@ -104,10 +117,40 @@ function renderUsers(list){
 }
 
 // =====================
+// LOAD CHAT HISTORY (NEW)
+// =====================
+async function loadHistory(user) {
+
+  try {
+
+    let res = await fetch(`/history/${myName}/${user}`);
+    let data = await res.json();
+
+    chats[user] = [];
+
+    data.forEach(m => {
+
+      storeMsg(
+        user,
+        m.sender,
+        m.msg,
+        m.time
+      );
+    });
+
+    renderChat(user);
+
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+// =====================
 // SEND MESSAGE
 // =====================
-function send(){
-  if(!target){
+function send() {
+
+  if (!target) {
     alert("Select a user first");
     return;
   }
@@ -115,14 +158,12 @@ function send(){
   const msgInput = document.getElementById("msg");
   const text = msgInput.value.trim();
 
-  if(text === "") return;
+  if (text === "") return;
 
   const time = getTime();
 
-  // save locally first
+  // instant UI
   storeMsg(target, myName, text, time);
-
-  // show instantly
   renderChat(target);
 
   ws.send(JSON.stringify({
@@ -135,48 +176,58 @@ function send(){
 }
 
 // =====================
-// STORE MESSAGE (CORE FIX)
+// STORE MESSAGE
 // =====================
-function storeMsg(user, sender, text, time){
+function storeMsg(user, sender, text, time) {
 
-  if(!chats[user]){
+  if (!chats[user]) {
     chats[user] = [];
   }
 
-  chats[user].push({sender, text, time});
+  chats[user].push({
+    sender,
+    text,
+    time
+  });
 }
 
 // =====================
-// ADD MESSAGE (from server)
+// HANDLE INCOMING MESSAGE
 // =====================
-function addMsg(sender, text, time){
+function handleIncomingMessage(d) {
+
+  let sender = d.sender;
+  let text = d.text;
+  let time = d.time;
 
   let key = (sender === myName) ? target : sender;
 
-  if(!key) return;
+  if (!key) return;
 
   storeMsg(key, sender, text, time);
 
-  if(key === target){
+  if (key === target) {
     renderChat(target);
   }
 }
 
 // =====================
-// RENDER CHAT (IMPORTANT)
+// RENDER CHAT
 // =====================
-function renderChat(user){
+function renderChat(user) {
 
   const box = document.getElementById("messages");
   box.innerHTML = "";
 
-  if(!chats[user]) return;
+  if (!chats[user]) return;
 
   chats[user].forEach(m => {
 
     let div = document.createElement("div");
 
-    div.className = "msg " + (m.sender === myName ? "me" : "other");
+    div.className =
+      "msg " +
+      (m.sender === myName ? "me" : "other");
 
     div.innerHTML = `
       <div class="text">${m.text}</div>
@@ -190,52 +241,12 @@ function renderChat(user){
 }
 
 // =====================
-// TIME FORMAT
+// TIME
 // =====================
-function getTime(){
+function getTime() {
+
   let d = new Date();
-  return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
-                                         }  const text = msgInput.value.trim();
 
-  if(text === "") return;
-
-  const time = getTime();
-
-  // show own message instantly
-  addMsg(myName, text, time);
-
-  ws.send(JSON.stringify({
-    type: "dm",
-    to: target,
-    msg: text
-  }));
-
-  msgInput.value = "";
-}
-
-// =====================
-// ADD MESSAGE UI
-// =====================
-function addMsg(sender, text, time){
-  const box = document.getElementById("messages");
-
-  let div = document.createElement("div");
-
-  div.className = "msg " + (sender === myName ? "me" : "other");
-
-  div.innerHTML = `
-    <div class="text">${text}</div>
-    <div class="time">${sender} • ${time}</div>
-  `;
-
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
-}
-
-// =====================
-// TIME FORMAT
-// =====================
-function getTime(){
-  let d = new Date();
-  return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
-    }
+  return d.getHours() + ":" +
+    String(d.getMinutes()).padStart(2, "0");
+  }
