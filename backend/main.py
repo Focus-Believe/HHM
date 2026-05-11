@@ -14,39 +14,32 @@ app = FastAPI()
 mgr = Manager()
 
 # =========================
-# MESSAGE SAVE QUEUE
+# MESSAGE QUEUE (FAST SAVE)
 # =========================
 save_queue = asyncio.Queue()
 
 
 # =========================
-# BACKGROUND DB WRITER
+# BACKGROUND DB WORKER
 # =========================
 async def save_worker():
     while True:
         sender, receiver, msg, time = await save_queue.get()
         db.save_message(sender, receiver, msg, time)
-        print("Saved:", msg)
 
 
-# =========================
-# STARTUP
-# =========================
 @app.on_event("startup")
 async def startup():
     asyncio.create_task(save_worker())
 
 
 # =========================
-# PATHS (Render safe)
+# FRONTEND PATH
 # =========================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")
 
 
-# =========================
-# STATIC FILES
-# =========================
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 
@@ -59,15 +52,15 @@ async def home():
 
 
 # =========================
-# CHAT PAGE (NEW)
+# CHAT PAGE
 # =========================
 @app.get("/chat/{username}")
-async def chat_page(username: str):
+async def chat(username: str):
     return FileResponse(os.path.join(FRONTEND_DIR, "chat.html"))
 
 
 # =========================
-# USERS LIST API
+# USERS LIST
 # =========================
 @app.get("/users")
 async def users():
@@ -76,7 +69,7 @@ async def users():
 
 
 # =========================
-# CHAT HISTORY API
+# CHAT HISTORY
 # =========================
 @app.get("/history/{me}/{user}")
 async def history(me: str, user: str):
@@ -88,15 +81,14 @@ async def history(me: str, user: str):
             "sender": m[0],
             "receiver": m[1],
             "msg": m[2],
-            "time": m[3],
-            "seen": m[4] if len(m) > 4 else False
+            "time": m[3]
         }
         for m in msgs
     ]
 
 
 # =========================
-# RECENT CHATS API
+# RECENT CHATS
 # =========================
 @app.get("/recent/{user}")
 async def recent(user: str):
@@ -112,6 +104,7 @@ async def recent(user: str):
 # BROADCAST USERS
 # =========================
 async def send_users():
+
     users = mgr.users()
 
     for ws in list(mgr.name_to_ws.values()):
@@ -125,28 +118,27 @@ async def send_users():
 
 
 # =========================
-# WEBSOCKET
+# WEBSOCKET ENGINE (CORE)
 # =========================
 @app.websocket("/ws")
-async def ws(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket):
 
     await websocket.accept()
 
     try:
+
         while True:
 
             data = json.loads(await websocket.receive_text())
             t = data.get("type")
+
 
             # =====================
             # REGISTER
             # =====================
             if t == "register":
 
-                ok = db.register(
-                    data["name"],
-                    data["password"]
-                )
+                ok = db.register(data["name"], data["password"])
 
                 await websocket.send_text(json.dumps({
                     "type": "register",
@@ -159,10 +151,7 @@ async def ws(websocket: WebSocket):
             # =====================
             elif t == "login":
 
-                ok = db.login(
-                    data["name"],
-                    data["password"]
-                )
+                ok = db.login(data["name"], data["password"])
 
                 if ok:
                     await mgr.connect(data["name"], websocket)
@@ -175,7 +164,7 @@ async def ws(websocket: WebSocket):
 
 
             # =====================
-            # PRIVATE MESSAGE
+            # PRIVATE MESSAGE (ANTI DUPLICATE FIXED)
             # =====================
             elif t == "dm":
 
@@ -184,23 +173,64 @@ async def ws(websocket: WebSocket):
                 msg = data["msg"]
                 time = datetime.now().strftime("%H:%M")
 
-                # SAVE TO QUEUE
+                # save async (non-blocking)
                 await save_queue.put((sender, receiver, msg, time))
 
                 payload = json.dumps({
                     "type": "message",
                     "sender": sender,
                     "text": msg,
-                    "time": time
+                    "time": time,
+                    "delivered": True
                 })
 
-                # send to receiver
+                # send to receiver only
                 target_ws = mgr.get_ws(receiver)
                 if target_ws:
                     await target_ws.send_text(payload)
 
-                # send to sender (instant UI update)
+                # send to sender once (UI sync)
                 await websocket.send_text(payload)
+
+
+            # =====================
+            # TYPING INDICATOR
+            # =====================
+            elif t == "typing":
+
+                sender = mgr.get_name(websocket)
+                receiver = data["to"]
+
+                ws = mgr.get_ws(receiver)
+
+                if ws:
+                    await ws.send_text(json.dumps({
+                        "type": "typing",
+                        "from": sender
+                    }))
+
+
+            # =====================
+            # SEEN SYSTEM
+            # =====================
+            elif t == "seen":
+
+                user = mgr.get_name(websocket)
+                other = data["user"]
+
+                db.mark_seen(other, user)
+
+
+            # =====================
+            # HEARTBEAT (optional future stability)
+            # =====================
+            elif t == "ping":
+
+                await websocket.send_text(json.dumps({
+                    "type": "pong",
+                    "time": datetime.now().strftime("%H:%M:%S")
+                }))
+
 
     except WebSocketDisconnect:
 
