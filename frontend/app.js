@@ -1,8 +1,10 @@
 let ws;
-let target = null;
 let myName = null;
+let target = null;
 
-// chat memory
+// =====================
+// CHAT MEMORY (PER USER)
+// =====================
 let chats = {};
 
 // =====================
@@ -18,7 +20,7 @@ function connect() {
 
   ws.onmessage = (e) => {
 
-    let d = JSON.parse(e.data);
+    const d = JSON.parse(e.data);
 
     // =====================
     // LOGIN SUCCESS
@@ -43,6 +45,22 @@ function connect() {
     // =====================
     if (d.type === "message") {
       handleIncomingMessage(d);
+    }
+
+    // =====================
+    // TYPING
+    // =====================
+    if (d.type === "typing") {
+
+      const box = document.getElementById("typing");
+
+      box.innerText = d.from + " is typing...";
+
+      clearTimeout(window.__typingTimer);
+
+      window.__typingTimer = setTimeout(() => {
+        box.innerText = "";
+      }, 1000);
     }
   };
 }
@@ -86,67 +104,38 @@ function register() {
 // =====================
 function renderUsers(list) {
 
-  const usersDiv = document.getElementById("users");
-  const header = document.getElementById("header");
+  const box = document.getElementById("users");
+  box.innerHTML = "";
 
-  usersDiv.innerHTML = "";
+  list.forEach(user => {
 
-  list.forEach(u => {
+    if (user === myName) return;
 
-    if (u === myName) return;
-
-    let div = document.createElement("div");
+    const div = document.createElement("div");
     div.className = "user";
-    div.innerText = u;
 
-    div.onclick = async () => {
+    div.innerHTML = `
+      <span>${user}</span>
+      <small id="status-${user}"></small>
+    `;
 
-      target = u;
-      header.innerText = "Chat with " + u;
+    div.onclick = () => {
 
-      document.querySelectorAll(".user")
-        .forEach(x => x.classList.remove("active"));
+      target = user;
 
-      div.classList.add("active");
+      document.getElementById("header").innerText = "Chat with " + user;
 
-      await loadHistory(u);
+      markSeen(user);
+
+      renderChat(user);
     };
 
-    usersDiv.appendChild(div);
+    box.appendChild(div);
   });
 }
 
 // =====================
-// LOAD CHAT HISTORY (NEW)
-// =====================
-async function loadHistory(user) {
-
-  try {
-
-    let res = await fetch(`/history/${myName}/${user}`);
-    let data = await res.json();
-
-    chats[user] = [];
-
-    data.forEach(m => {
-
-      storeMsg(
-        user,
-        m.sender,
-        m.msg,
-        m.time
-      );
-    });
-
-    renderChat(user);
-
-  } catch (err) {
-    console.log(err);
-  }
-}
-
-// =====================
-// SEND MESSAGE
+// SEND MESSAGE (FIXED)
 // =====================
 function send() {
 
@@ -155,15 +144,15 @@ function send() {
     return;
   }
 
-  const msgInput = document.getElementById("msg");
-  const text = msgInput.value.trim();
+  const input = document.getElementById("msg");
+  const text = input.value.trim();
 
   if (text === "") return;
 
   const time = getTime();
 
-  // instant UI
-  storeMsg(target, myName, text, time);
+  storeMessage(target, myName, text, time);
+
   renderChat(target);
 
   ws.send(JSON.stringify({
@@ -172,13 +161,13 @@ function send() {
     msg: text
   }));
 
-  msgInput.value = "";
+  input.value = "";
 }
 
 // =====================
-// STORE MESSAGE
+// STORE MESSAGE (LOCAL CACHE)
 // =====================
-function storeMsg(user, sender, text, time) {
+function storeMessage(user, sender, text, time) {
 
   if (!chats[user]) {
     chats[user] = [];
@@ -187,27 +176,28 @@ function storeMsg(user, sender, text, time) {
   chats[user].push({
     sender,
     text,
-    time
+    time,
+    seen: false
   });
 }
 
 // =====================
-// HANDLE INCOMING MESSAGE
+// HANDLE INCOMING MESSAGE (NO DUPLICATE BUG)
 // =====================
 function handleIncomingMessage(d) {
 
-  let sender = d.sender;
-  let text = d.text;
-  let time = d.time;
+  const sender = d.sender;
 
-  let key = (sender === myName) ? target : sender;
+  const chatKey = (sender === myName) ? target : sender;
 
-  if (!key) return;
+  if (!chatKey) return;
 
-  storeMsg(key, sender, text, time);
+  storeMessage(chatKey, sender, d.text, d.time);
 
-  if (key === target) {
+  if (chatKey === target) {
     renderChat(target);
+  } else {
+    increaseUnread(chatKey);
   }
 }
 
@@ -223,15 +213,19 @@ function renderChat(user) {
 
   chats[user].forEach(m => {
 
-    let div = document.createElement("div");
+    let tick = "";
 
-    div.className =
-      "msg " +
-      (m.sender === myName ? "me" : "other");
+    if (m.sender === myName) {
+      tick = m.seen ? " ✓✓" : " ✓";
+    }
+
+    const div = document.createElement("div");
+
+    div.className = "msg " + (m.sender === myName ? "me" : "other");
 
     div.innerHTML = `
-      <div class="text">${m.text}</div>
-      <div class="time">${m.sender} • ${m.time}</div>
+      <div class="text">${m.text} ${tick}</div>
+      <div class="time">${m.time}</div>
     `;
 
     box.appendChild(div);
@@ -241,12 +235,49 @@ function renderChat(user) {
 }
 
 // =====================
-// TIME
+// MARK SEEN
+// =====================
+function markSeen(user) {
+
+  ws.send(JSON.stringify({
+    type: "seen",
+    user: user
+  }));
+}
+
+// =====================
+// TYPING EVENT
+// =====================
+function typing() {
+
+  if (!target) return;
+
+  ws.send(JSON.stringify({
+    type: "typing",
+    to: target
+  }));
+}
+
+// =====================
+// UNREAD SYSTEM
+// =====================
+function increaseUnread(user) {
+
+  const el = document.getElementById("status-" + user);
+
+  if (!el) return;
+
+  let count = parseInt(el.innerText || "0");
+
+  el.innerText = (count + 1) + " new";
+}
+
+// =====================
+// TIME FORMAT
 // =====================
 function getTime() {
 
-  let d = new Date();
+  const d = new Date();
 
-  return d.getHours() + ":" +
-    String(d.getMinutes()).padStart(2, "0");
-  }
+  return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
