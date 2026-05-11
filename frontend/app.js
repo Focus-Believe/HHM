@@ -3,7 +3,7 @@ let myName = null;
 let target = null;
 
 // =====================
-// CHAT MEMORY (PER USER)
+// CHAT MEMORY
 // =====================
 let chats = {};
 
@@ -34,6 +34,18 @@ function connect() {
     }
 
     // =====================
+    // REGISTER SUCCESS
+    // =====================
+    if (d.type === "register") {
+
+      if (d.ok) {
+        alert("Register success");
+      } else {
+        alert("Username already exists");
+      }
+    }
+
+    // =====================
     // USERS LIST
     // =====================
     if (d.type === "users") {
@@ -41,7 +53,7 @@ function connect() {
     }
 
     // =====================
-    // MESSAGE RECEIVE
+    // MESSAGE
     // =====================
     if (d.type === "message") {
       handleIncomingMessage(d);
@@ -52,16 +64,38 @@ function connect() {
     // =====================
     if (d.type === "typing") {
 
-      const box = document.getElementById("typing");
+      const typingBox = document.getElementById("typing");
 
-      box.innerText = d.from + " is typing...";
+      typingBox.innerText = d.from + " is typing...";
 
-      clearTimeout(window.__typingTimer);
+      clearTimeout(window.typingTimer);
 
-      window.__typingTimer = setTimeout(() => {
-        box.innerText = "";
+      window.typingTimer = setTimeout(() => {
+        typingBox.innerText = "";
       }, 1000);
     }
+
+    // =====================
+    // PONG
+    // =====================
+    if (d.type === "pong") {
+      console.log("pong:", d.time);
+    }
+  };
+
+  // =====================
+  // AUTO RECONNECT
+  // =====================
+  ws.onclose = () => {
+
+    console.log("Disconnected");
+
+    setTimeout(() => {
+
+      console.log("Reconnecting...");
+      connect();
+
+    }, 2000);
   };
 }
 
@@ -104,14 +138,17 @@ function register() {
 // =====================
 function renderUsers(list) {
 
-  const box = document.getElementById("users");
-  box.innerHTML = "";
+  const usersBox = document.getElementById("users");
+
+  usersBox.innerHTML = "";
 
   list.forEach(user => {
 
+    // hide self
     if (user === myName) return;
 
     const div = document.createElement("div");
+
     div.className = "user";
 
     div.innerHTML = `
@@ -119,23 +156,43 @@ function renderUsers(list) {
       <small id="status-${user}"></small>
     `;
 
+    // =====================
+    // OPEN CHAT
+    // =====================
     div.onclick = () => {
 
       target = user;
 
-      document.getElementById("header").innerText = "Chat with " + user;
+      document.getElementById("header").innerText =
+        "Chat with " + user;
 
+      // active style
+      document.querySelectorAll(".user")
+        .forEach(x => x.classList.remove("active"));
+
+      div.classList.add("active");
+
+      // clear unread
+      const unread = document.getElementById("status-" + user);
+
+      if (unread) {
+        unread.innerText = "";
+      }
+
+      // seen
       markSeen(user);
 
+      // render messages
       renderChat(user);
     };
 
-    box.appendChild(div);
+    usersBox.appendChild(div);
   });
 }
 
 // =====================
-// SEND MESSAGE (FIXED)
+// SEND MESSAGE
+// FIXED (NO DUPLICATE)
 // =====================
 function send() {
 
@@ -145,16 +202,13 @@ function send() {
   }
 
   const input = document.getElementById("msg");
+
   const text = input.value.trim();
 
   if (text === "") return;
 
-  const time = getTime();
-
-  storeMessage(target, myName, text, time);
-
-  renderChat(target);
-
+  // SEND ONLY
+  // server will return once
   ws.send(JSON.stringify({
     type: "dm",
     to: target,
@@ -165,39 +219,51 @@ function send() {
 }
 
 // =====================
-// STORE MESSAGE (LOCAL CACHE)
-// =====================
-function storeMessage(user, sender, text, time) {
-
-  if (!chats[user]) {
-    chats[user] = [];
-  }
-
-  chats[user].push({
-    sender,
-    text,
-    time,
-    seen: false
-  });
-}
-
-// =====================
-// HANDLE INCOMING MESSAGE (NO DUPLICATE BUG)
+// HANDLE MESSAGE
 // =====================
 function handleIncomingMessage(d) {
 
   const sender = d.sender;
 
-  const chatKey = (sender === myName) ? target : sender;
+  // if own msg
+  let chatUser;
 
-  if (!chatKey) return;
-
-  storeMessage(chatKey, sender, d.text, d.time);
-
-  if (chatKey === target) {
-    renderChat(target);
+  if (sender === myName) {
+    chatUser = target;
   } else {
-    increaseUnread(chatKey);
+    chatUser = sender;
+  }
+
+  if (!chatUser) return;
+
+  // create memory
+  if (!chats[chatUser]) {
+    chats[chatUser] = [];
+  }
+
+  // store once only
+  chats[chatUser].push({
+    sender: sender,
+    text: d.text,
+    time: d.time,
+    delivered: d.delivered || false,
+    seen: false
+  });
+
+  // active chat
+  if (chatUser === target) {
+
+    renderChat(chatUser);
+
+    // auto seen
+    if (sender !== myName) {
+      markSeen(chatUser);
+    }
+
+  } else {
+
+    // unread count
+    increaseUnread(chatUser);
   }
 }
 
@@ -207,6 +273,7 @@ function handleIncomingMessage(d) {
 function renderChat(user) {
 
   const box = document.getElementById("messages");
+
   box.innerHTML = "";
 
   if (!chats[user]) return;
@@ -215,22 +282,36 @@ function renderChat(user) {
 
     let tick = "";
 
+    // own message
     if (m.sender === myName) {
-      tick = m.seen ? " ✓✓" : " ✓";
+
+      if (m.seen) {
+        tick = " ✓✓";
+      } else if (m.delivered) {
+        tick = " ✓";
+      }
     }
 
     const div = document.createElement("div");
 
-    div.className = "msg " + (m.sender === myName ? "me" : "other");
+    div.className =
+      "msg " +
+      (m.sender === myName ? "me" : "other");
 
     div.innerHTML = `
-      <div class="text">${m.text} ${tick}</div>
-      <div class="time">${m.time}</div>
+      <div class="text">
+        ${m.text}${tick}
+      </div>
+
+      <div class="time">
+        ${m.time}
+      </div>
     `;
 
     box.appendChild(div);
   });
 
+  // auto scroll
   box.scrollTop = box.scrollHeight;
 }
 
@@ -246,7 +327,7 @@ function markSeen(user) {
 }
 
 // =====================
-// TYPING EVENT
+// TYPING
 // =====================
 function typing() {
 
@@ -259,25 +340,33 @@ function typing() {
 }
 
 // =====================
-// UNREAD SYSTEM
+// UNREAD
 // =====================
 function increaseUnread(user) {
 
-  const el = document.getElementById("status-" + user);
+  const el =
+    document.getElementById("status-" + user);
 
   if (!el) return;
 
-  let count = parseInt(el.innerText || "0");
+  let count =
+    parseInt(el.innerText || "0");
 
-  el.innerText = (count + 1) + " new";
+  count++;
+
+  el.innerText = count + " new";
 }
 
 // =====================
-// TIME FORMAT
+// HEARTBEAT
 // =====================
-function getTime() {
+setInterval(() => {
 
-  const d = new Date();
+  if (ws && ws.readyState === 1) {
 
-  return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
-    }
+    ws.send(JSON.stringify({
+      type: "ping"
+    }));
+  }
+
+}, 30000);
