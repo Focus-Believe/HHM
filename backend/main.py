@@ -1,127 +1,184 @@
 import json
 import os
 import asyncio
+
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
+from fastapi import WebSocket
+from fastapi import WebSocketDisconnect
+
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 
 from backend import db
 from backend.manager import Manager
 
+# =========================
+# FASTAPI
+# =========================
 app = FastAPI()
+
+# =========================
+# MANAGER
+# =========================
 mgr = Manager()
 
 # =========================
-# MESSAGE QUEUE (FAST SAVE)
+# SAVE QUEUE
 # =========================
 save_queue = asyncio.Queue()
 
+# =========================
+# BASE PATHS
+# =========================
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
+
+FRONTEND_DIR = os.path.join(
+    BASE_DIR,
+    "..",
+    "frontend"
+)
 
 # =========================
-# BACKGROUND DB WORKER
+# STATIC FILES
+# =========================
+app.mount(
+    "/static",
+    StaticFiles(directory=FRONTEND_DIR),
+    name="static"
+)
+
+# =========================
+# SAVE WORKER
 # =========================
 async def save_worker():
+
     while True:
-        sender, receiver, msg, time = await save_queue.get()
-        db.save_message(sender, receiver, msg, time)
 
+        sender, receiver, msg, time = (
+            await save_queue.get()
+        )
 
+        try:
+
+            db.save(
+                sender,
+                receiver,
+                msg,
+                time
+            )
+
+            print(
+                f"[SAVE] {sender} -> {receiver}"
+            )
+
+        except Exception as e:
+
+            print(
+                "[DB ERROR]",
+                e
+            )
+
+# =========================
+# STARTUP
+# =========================
 @app.on_event("startup")
 async def startup():
-    asyncio.create_task(save_worker())
 
-
-# =========================
-# FRONTEND PATH
-# =========================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")
-
-
-app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-
+    asyncio.create_task(
+        save_worker()
+    )
 
 # =========================
 # HOME PAGE
+# USERS PAGE
 # =========================
 @app.get("/")
 async def home():
-    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
-
-# =========================
-# CHAT PAGE
-# =========================
-@app.get("/chat/{username}")
-async def chat(username: str):
-    return FileResponse(os.path.join(FRONTEND_DIR, "chat.html"))
-
+    return FileResponse(
+        os.path.join(
+            FRONTEND_DIR,
+            "index.html"
+        )
+    )
 
 # =========================
-# USERS LIST
+# PRIVATE CHAT PAGE
 # =========================
-@app.get("/users")
-async def users():
-    data = db.get_users()
-    return {"users": [u[0] for u in data]}
+@app.get("/chat/{user}")
+async def private_chat(user: str):
 
-
-# =========================
-# CHAT HISTORY
-# =========================
-@app.get("/history/{me}/{user}")
-async def history(me: str, user: str):
-
-    msgs = db.get_messages(me, user)
-
-    return [
-        {
-            "sender": m[0],
-            "receiver": m[1],
-            "msg": m[2],
-            "time": m[3]
-        }
-        for m in msgs
-    ]
-
+    return FileResponse(
+        os.path.join(
+            FRONTEND_DIR,
+            "chat.html"
+        )
+    )
 
 # =========================
-# RECENT CHATS
+# API USERS
 # =========================
-@app.get("/recent/{user}")
-async def recent(user: str):
+@app.get("/api/users")
+async def api_users():
 
-    chats = db.get_recent_chats(user)
-
-    return {
-        "users": [c[0] for c in chats]
-    }
-
+    return JSONResponse(
+        mgr.users()
+    )
 
 # =========================
-# BROADCAST USERS
+# CHAT HISTORY API
 # =========================
-async def send_users():
+@app.get("/api/messages/{user1}/{user2}")
+async def api_messages(
+    user1: str,
+    user2: str
+):
+
+    data = db.get_messages(
+        user1,
+        user2
+    )
+
+    return JSONResponse(data)
+
+# =========================
+# ONLINE USERS BROADCAST
+# =========================
+async def broadcast_users():
 
     users = mgr.users()
 
-    for ws in list(mgr.name_to_ws.values()):
+    payload = json.dumps({
+        "type": "users",
+        "data": users
+    })
+
+    for ws in list(
+        mgr.all_ws()
+    ):
+
         try:
-            await ws.send_text(json.dumps({
-                "type": "users",
-                "data": users
-            }))
+
+            await ws.send_text(
+                payload
+            )
+
         except:
+
             mgr.disconnect(ws)
 
-
 # =========================
-# WEBSOCKET ENGINE (CORE)
+# WEBSOCKET
 # =========================
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(
+    websocket: WebSocket
+):
 
     await websocket.accept()
 
@@ -129,110 +186,228 @@ async def websocket_endpoint(websocket: WebSocket):
 
         while True:
 
-            data = json.loads(await websocket.receive_text())
-            t = data.get("type")
+            raw = await websocket.receive_text()
 
+            data = json.loads(raw)
+
+            t = data.get("type")
 
             # =====================
             # REGISTER
             # =====================
             if t == "register":
 
-                ok = db.register(data["name"], data["password"])
+                ok = db.register(
+                    data["name"],
+                    data["password"]
+                )
 
-                await websocket.send_text(json.dumps({
-                    "type": "register",
-                    "ok": ok
-                }))
-
+                await websocket.send_text(
+                    json.dumps({
+                        "type": "register",
+                        "ok": ok
+                    })
+                )
 
             # =====================
             # LOGIN
             # =====================
             elif t == "login":
 
-                ok = db.login(data["name"], data["password"])
+                ok = db.login(
+                    data["name"],
+                    data["password"]
+                )
 
                 if ok:
-                    await mgr.connect(data["name"], websocket)
-                    await send_users()
 
-                await websocket.send_text(json.dumps({
-                    "type": "login",
-                    "ok": ok
-                }))
+                    await mgr.connect(
+                        data["name"],
+                        websocket
+                    )
 
+                    await broadcast_users()
+
+                await websocket.send_text(
+                    json.dumps({
+                        "type": "login",
+                        "ok": ok
+                    })
+                )
 
             # =====================
-            # PRIVATE MESSAGE (ANTI DUPLICATE FIXED)
+            # PRIVATE MESSAGE
             # =====================
             elif t == "dm":
 
-                sender = mgr.get_name(websocket)
-                receiver = data["to"]
-                msg = data["msg"]
-                time = datetime.now().strftime("%H:%M")
+                sender = mgr.get_name(
+                    websocket
+                )
 
-                # save async (non-blocking)
-                await save_queue.put((sender, receiver, msg, time))
+                receiver = data["to"]
+
+                text = data["msg"]
+
+                # empty protection
+                if not text.strip():
+                    continue
+
+                # limit
+                if len(text) > 3000:
+                    continue
+
+                time = datetime.now().strftime(
+                    "%H:%M"
+                )
+
+                # =====================
+                # ASYNC SAVE
+                # =====================
+                await save_queue.put((
+                    sender,
+                    receiver,
+                    text,
+                    time
+                ))
 
                 payload = json.dumps({
+
                     "type": "message",
+
                     "sender": sender,
-                    "text": msg,
+
+                    "receiver": receiver,
+
+                    "text": text,
+
                     "time": time,
+
                     "delivered": True
                 })
 
-                # send to receiver only
-                target_ws = mgr.get_ws(receiver)
+                # =====================
+                # SEND TO RECEIVER
+                # =====================
+                target_ws = mgr.get_ws(
+                    receiver
+                )
+
                 if target_ws:
-                    await target_ws.send_text(payload)
 
-                # send to sender once (UI sync)
-                await websocket.send_text(payload)
+                    try:
 
+                        await target_ws.send_text(
+                            payload
+                        )
+
+                    except:
+                        pass
+
+                # =====================
+                # SEND TO SENDER
+                # IMPORTANT:
+                # prevents duplicate issue
+                # =====================
+                try:
+
+                    await websocket.send_text(
+                        payload
+                    )
+
+                except:
+                    pass
 
             # =====================
-            # TYPING INDICATOR
+            # TYPING
             # =====================
             elif t == "typing":
 
-                sender = mgr.get_name(websocket)
-                receiver = data["to"]
+                sender = mgr.get_name(
+                    websocket
+                )
 
-                ws = mgr.get_ws(receiver)
+                target_ws = mgr.get_ws(
+                    data["to"]
+                )
 
-                if ws:
-                    await ws.send_text(json.dumps({
-                        "type": "typing",
-                        "from": sender
-                    }))
+                if target_ws:
 
+                    try:
+
+                        await target_ws.send_text(
+                            json.dumps({
+                                "type": "typing",
+                                "from": sender
+                            })
+                        )
+
+                    except:
+                        pass
 
             # =====================
-            # SEEN SYSTEM
+            # SEEN
             # =====================
             elif t == "seen":
 
-                user = mgr.get_name(websocket)
-                other = data["user"]
+                sender = mgr.get_name(
+                    websocket
+                )
 
-                db.mark_seen(other, user)
+                target_ws = mgr.get_ws(
+                    data["user"]
+                )
 
+                if target_ws:
+
+                    try:
+
+                        await target_ws.send_text(
+                            json.dumps({
+                                "type": "seen",
+                                "from": sender
+                            })
+                        )
+
+                    except:
+                        pass
 
             # =====================
-            # HEARTBEAT (optional future stability)
+            # PING
             # =====================
             elif t == "ping":
 
-                await websocket.send_text(json.dumps({
-                    "type": "pong",
-                    "time": datetime.now().strftime("%H:%M:%S")
-                }))
+                await websocket.send_text(
+                    json.dumps({
+                        "type": "pong",
+                        "time": datetime.now().strftime(
+                            "%H:%M:%S"
+                        )
+                    })
+                )
 
-
+    # =========================
+    # DISCONNECT
+    # =========================
     except WebSocketDisconnect:
 
-        mgr.disconnect(websocket)
-        await send_users()
+        mgr.disconnect(
+            websocket
+        )
+
+        await broadcast_users()
+
+    # =========================
+    # OTHER ERROR
+    # =========================
+    except Exception as e:
+
+        print(
+            "[WS ERROR]",
+            e
+        )
+
+        mgr.disconnect(
+            websocket
+        )
+
+        await broadcast_users()
